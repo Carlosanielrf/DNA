@@ -3,19 +3,15 @@ import type { DnaFact } from '../data/facts'
 interface FactPanelProps {
   fact: DnaFact
   onClose?: () => void
-  showClose?: boolean
 }
 
-export function FactPanel({ fact, onClose, showClose }: FactPanelProps) {
+export function FactPanel({ fact, onClose }: FactPanelProps) {
   return (
     <aside className="fact-panel" style={{ ['--fact-accent' as string]: fact.accent }}>
       <div className="fact-panel__glow" aria-hidden="true" />
       <div className="fact-panel__header">
-        <div>
-          <p className="fact-panel__eyebrow">{fact.subtitle}</p>
-          <h2 className="fact-panel__title">{fact.title}</h2>
-        </div>
-        {showClose && onClose ? (
+        <h2 className="fact-panel__title">{fact.title}</h2>
+        {onClose ? (
           <button type="button" className="fact-panel__close" onClick={onClose} aria-label="Fechar">
             ×
           </button>

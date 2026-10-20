@@ -21,46 +21,32 @@ interface DnaHelixProps {
   onPinchZoom: (factor: number, centerX: number, centerY: number) => void
 }
 
-interface SphereNode {
+interface Bead {
   x: number
   y: number
   z: number
-  strand: 0 | 1
-  index: number
-  phase: number
-  /** Deterministic seed for organic deformation */
+  r: number
   seed: number
-  sizeMul: number
+  strand: 0 | 1 | 2
+  index: number
+  /** backbone node index for hit testing */
+  node: number
 }
 
-interface RungNode {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
-  z: number
-  index: number
-  seed: number
-}
-
-const TURNS = 9
-const POINTS_PER_TURN = 26
+const TURNS = 8
+const POINTS_PER_TURN = 32
 const TOTAL = TURNS * POINTS_PER_TURN
-const AMPLITUDE = 54
-const SPACING = 15
-const SPHERE_R = 8.4
+const AMPLITUDE = 58
+const SPACING = 11
 
-/** Stable pseudo-random in [0,1) from integer seed */
 function hash01(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453
   return x - Math.floor(x)
 }
 
-function buildGeometry(vertical: boolean) {
-  const spheres: SphereNode[] = []
-  const rungs: RungNode[] = []
-  const length = TOTAL * SPACING
-  const half = length / 2
+function buildBeads(vertical: boolean): Bead[] {
+  const beads: Bead[] = []
+  const half = (TOTAL * SPACING) / 2
 
   for (let i = 0; i < TOTAL; i++) {
     const t = i / POINTS_PER_TURN
@@ -69,176 +55,155 @@ function buildGeometry(vertical: boolean) {
 
     for (const strand of [0, 1] as const) {
       const p = phase + strand * Math.PI
-      // Slight irregular radius — not a perfect cylinder of helix
-      const ampJitter = 1 + (hash01(i * 17 + strand * 91) - 0.5) * 0.12
-      const lateral = Math.cos(p) * AMPLITUDE * ampJitter
+      const amp = AMPLITUDE * (1 + (hash01(i * 13 + strand) - 0.5) * 0.1)
+      const lat = Math.cos(p) * amp
       const depth = Math.sin(p)
-      const seed = i * 97 + strand * 131 + 7
-      const sizeMul = 0.62 + hash01(seed) * 0.72
-      const node: SphereNode = {
-        x: vertical ? lateral : along,
-        y: vertical ? along : lateral,
-        z: depth,
-        strand,
-        index: i,
-        phase: p,
-        seed,
-        sizeMul,
+      const bx = vertical ? lat : along
+      const by = vertical ? along : lat
+
+      // Dense cluster of misshapen “cells” per backbone node
+      const cluster = 6 + Math.floor(hash01(i * 7 + strand * 3) * 5)
+      for (let c = 0; c < cluster; c++) {
+        const ang = hash01(i * 41 + strand * 17 + c * 9) * Math.PI * 2
+        const dist = hash01(i * 23 + c * 5 + strand) * 7.5
+        const jx = Math.cos(ang) * dist + (hash01(c + i) - 0.5) * 2.2
+        const jy = Math.sin(ang) * dist * 0.7 + (hash01(c * 3 + i) - 0.5) * 1.8
+        const jz = (hash01(c * 11 + strand + i) - 0.5) * 0.35
+        beads.push({
+          x: bx + (vertical ? jx : jy * 0.35),
+          y: by + (vertical ? jy * 0.35 : jx),
+          z: depth + jz,
+          r: 3.2 + hash01(i * 19 + c * 7 + strand) * 5.8,
+          seed: i * 97 + strand * 131 + c * 17,
+          strand,
+          index: i,
+          node: i * 2 + strand,
+        })
       }
-      // Tiny positional jitter for organic uneven spacing
-      const jx = (hash01(seed + 3) - 0.5) * 3.2
-      const jy = (hash01(seed + 5) - 0.5) * 2.4
-      if (vertical) {
-        node.x += jx
-        node.y += jy * 0.4
-      } else {
-        node.x += jy * 0.4
-        node.y += jx
-      }
-      spheres.push(node)
     }
 
-    if (i % 3 === 0) {
+    // Base-pair rung as a chain of irregular beads
+    if (i % 2 === 0) {
       const p0 = phase
       const p1 = phase + Math.PI
       const lat0 = Math.cos(p0) * AMPLITUDE
       const lat1 = Math.cos(p1) * AMPLITUDE
-      const z = (Math.sin(p0) + Math.sin(p1)) / 2
-      const seed = i * 53 + 19
-      if (vertical) {
-        rungs.push({ x1: lat0, y1: along, x2: lat1, y2: along, z, index: i, seed })
-      } else {
-        rungs.push({ x1: along, y1: lat0, x2: along, y2: lat1, z, index: i, seed })
+      const z0 = Math.sin(p0)
+      const z1 = Math.sin(p1)
+      const steps = 7
+      for (let s = 0; s <= steps; s++) {
+        const u = s / steps
+        const wob = (hash01(i * 31 + s) - 0.5) * 4.5
+        const lat = lat0 + (lat1 - lat0) * u
+        const z = z0 + (z1 - z0) * u + (hash01(i + s * 3) - 0.5) * 0.15
+        const alongR = along + (hash01(i + s) - 0.5) * 1.2
+        beads.push({
+          x: vertical ? lat + wob * 0.15 : alongR,
+          y: vertical ? alongR : lat + wob * 0.15,
+          z,
+          r: 2.4 + hash01(i * 11 + s * 13) * 3.6,
+          seed: i * 53 + s * 29 + 400,
+          strand: 2,
+          index: i,
+          node: 10000 + i,
+        })
       }
     }
   }
 
-  return { spheres, rungs }
+  return beads
 }
 
-/**
- * Draw an imperfect organic “cell” blob: lumpy outline + overlapping lobes + grain.
- */
-function blobPath(
+function drawLumpyBead(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   radius: number,
   seed: number,
-  segments: number,
+  bright: number,
+  soft: number,
+  selected: boolean,
 ) {
-  ctx.beginPath()
-  for (let i = 0; i <= segments; i++) {
-    const a = (i / segments) * Math.PI * 2
-    const wobble =
-      1 +
-      Math.sin(a * 3 + seed) * 0.22 +
-      Math.sin(a * 5 + seed * 1.7) * 0.16 +
-      Math.cos(a * 2 + seed * 0.4) * 0.12 +
-      Math.sin(a * 7 + seed * 2.3) * 0.08 +
-      (hash01(seed * 10 + i) - 0.5) * 0.28
-    const rr = radius * wobble
-    const px = x + Math.cos(a) * rr
-    const py = y + Math.sin(a) * rr
-    if (i === 0) ctx.moveTo(px, py)
-    else ctx.lineTo(px, py)
-  }
-  ctx.closePath()
-}
-
-/**
- * Imperfect organic “cell” bead: lumpy outline, fused buds, grain — not a perfect circle.
- */
-function drawOrganicBlob(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  seed: number,
-  opts: {
-    bright: number
-    accent: string
-    selected: boolean
-    /** 0 = sharp focus, 1 = soft/out-of-focus */
-    soft: number
-  },
-) {
-  const { bright, accent, selected, soft } = opts
-  if (radius < 0.8) return
-
-  const alpha = 1 - soft * 0.45
-  const r = radius * (1 + soft * 0.25)
+  if (radius < 0.6) return
+  const alpha = Math.max(0.2, 1 - soft * 0.55)
+  const r = radius * (1 + soft * 0.2)
   ctx.save()
   ctx.globalAlpha = alpha
 
-  // Soft outer glow
-  const glowR = r * (selected ? 3.2 : 2.35)
-  const glow = ctx.createRadialGradient(x, y, r * 0.15, x, y, glowR)
-  glow.addColorStop(0, selected ? `${accent}70` : `rgba(180, 235, 255, ${0.28 * bright})`)
-  glow.addColorStop(0.5, `rgba(50, 150, 190, ${0.12 * bright})`)
+  // Outer soft glow
+  const glowR = r * (selected ? 2.8 : 1.9)
+  const glow = ctx.createRadialGradient(x, y, r * 0.1, x, y, glowR)
+  glow.addColorStop(0, selected ? 'rgba(200,245,255,0.45)' : `rgba(160, 230, 255, ${0.22 * bright})`)
+  glow.addColorStop(0.55, `rgba(40, 140, 190, ${0.08 * bright})`)
   glow.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = glow
   ctx.beginPath()
   ctx.arc(x, y, glowR, 0, Math.PI * 2)
   ctx.fill()
 
-  const lobes = 8 + Math.floor(hash01(seed) * 5)
-  blobPath(ctx, x, y, r, seed, lobes)
+  // Irregular outline
+  const segs = 8 + Math.floor(hash01(seed) * 5)
+  ctx.beginPath()
+  for (let i = 0; i <= segs; i++) {
+    const a = (i / segs) * Math.PI * 2
+    const wob =
+      1 +
+      Math.sin(a * 3 + seed) * 0.2 +
+      Math.sin(a * 5 + seed * 1.3) * 0.14 +
+      Math.cos(a * 2.2 + seed * 0.7) * 0.1 +
+      (hash01(seed * 9 + i) - 0.5) * 0.26
+    const px = x + Math.cos(a) * r * wob
+    const py = y + Math.sin(a) * r * wob
+    if (i === 0) ctx.moveTo(px, py)
+    else ctx.lineTo(px, py)
+  }
+  ctx.closePath()
 
-  const hx = x - r * (0.22 + hash01(seed + 1) * 0.22)
-  const hy = y - r * (0.28 + hash01(seed + 2) * 0.22)
-  const body = ctx.createRadialGradient(hx, hy, r * 0.05, x, y, r * 1.2)
-  body.addColorStop(0, `rgba(245, 252, 255, ${0.9 * bright})`)
-  body.addColorStop(0.2, `rgba(150, 225, 250, ${0.8 * bright})`)
-  body.addColorStop(0.48, accent)
-  body.addColorStop(0.75, `rgba(25, 95, 145, ${0.9})`)
-  body.addColorStop(1, `rgba(6, 30, 55, ${0.96})`)
+  // Cyan molecular shading (reference palette)
+  const hx = x - r * (0.28 + hash01(seed + 1) * 0.2)
+  const hy = y - r * (0.32 + hash01(seed + 2) * 0.18)
+  const body = ctx.createRadialGradient(hx, hy, r * 0.05, x, y, r * 1.25)
+  body.addColorStop(0, `rgba(245, 252, 255, ${0.92 * bright})`)
+  body.addColorStop(0.18, `rgba(170, 235, 255, ${0.85 * bright})`)
+  body.addColorStop(0.42, `rgba(90, 190, 230, ${0.9})`)
+  body.addColorStop(0.7, `rgba(30, 110, 160, ${0.92})`)
+  body.addColorStop(1, `rgba(8, 40, 70, ${0.95})`)
   ctx.fillStyle = body
   ctx.fill()
 
-  // Fused misshapen buds — cluster of irregular cells
-  const budCount = 3 + Math.floor(hash01(seed + 8) * 3)
-  for (let b = 0; b < budCount; b++) {
-    const ba = hash01(seed + 20 + b) * Math.PI * 2
-    const bd = r * (0.28 + hash01(seed + 30 + b) * 0.58)
-    const br = r * (0.3 + hash01(seed + 40 + b) * 0.48)
+  // Tiny fused lobe for extra deformity
+  if (hash01(seed + 40) > 0.35) {
+    const ba = hash01(seed + 41) * Math.PI * 2
+    const bd = r * (0.4 + hash01(seed + 42) * 0.45)
+    const br = r * (0.28 + hash01(seed + 43) * 0.4)
     const bx = x + Math.cos(ba) * bd
     const by = y + Math.sin(ba) * bd
-    blobPath(ctx, bx, by, br, seed + 50 + b, 6)
-    const bg = ctx.createRadialGradient(bx - br * 0.3, by - br * 0.3, 0, bx, by, br * 1.15)
-    bg.addColorStop(0, `rgba(220, 245, 255, ${0.6 * bright})`)
-    bg.addColorStop(0.5, `rgba(70, 170, 210, ${0.6})`)
-    bg.addColorStop(1, `rgba(12, 50, 85, ${0.8})`)
-    ctx.fillStyle = bg
+    ctx.beginPath()
+    for (let i = 0; i <= 6; i++) {
+      const a = (i / 6) * Math.PI * 2
+      const w = 1 + Math.sin(a * 2.8 + seed) * 0.22 + (hash01(seed + i) - 0.5) * 0.2
+      const px = bx + Math.cos(a) * br * w
+      const py = by + Math.sin(a) * br * w
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.closePath()
+    const lg = ctx.createRadialGradient(bx - br * 0.25, by - br * 0.25, 0, bx, by, br)
+    lg.addColorStop(0, `rgba(210, 245, 255, ${0.55 * bright})`)
+    lg.addColorStop(1, `rgba(20, 70, 110, ${0.75})`)
+    ctx.fillStyle = lg
     ctx.fill()
   }
 
-  // Porous grain (skip when soft to keep DOF cheap)
-  if (soft < 0.55) {
-    const speckles = 3 + Math.floor(hash01(seed + 60) * 5)
-    for (let s = 0; s < speckles; s++) {
-      const sa = hash01(seed + 70 + s) * Math.PI * 2
-      const sd = hash01(seed + 80 + s) * r * 0.68
-      const sx = x + Math.cos(sa) * sd
-      const sy = y + Math.sin(sa) * sd
-      const sr = r * (0.035 + hash01(seed + 90 + s) * 0.09)
-      ctx.fillStyle = `rgba(255,255,255,${0.12 + hash01(seed + 100 + s) * 0.35})`
-      ctx.beginPath()
-      ctx.arc(sx, sy, sr, 0, Math.PI * 2)
-      ctx.fill()
-    }
-  }
-
-  // Warm amber fleck (reference orange kiss)
-  if (hash01(seed + 200) > 0.74) {
-    const wa = hash01(seed + 201) * Math.PI * 2
-    const wd = r * 0.5
-    const wx = x + Math.cos(wa) * wd
-    const wy = y + Math.sin(wa) * wd
-    const wr = r * 0.2
+  // Warm fleck (orange kiss from reference)
+  if (hash01(seed + 80) > 0.82) {
+    const wa = hash01(seed + 81) * Math.PI * 2
+    const wx = x + Math.cos(wa) * r * 0.45
+    const wy = y + Math.sin(wa) * r * 0.45
+    const wr = r * 0.22
     const wg = ctx.createRadialGradient(wx, wy, 0, wx, wy, wr)
-    wg.addColorStop(0, `rgba(255, 185, 115, ${0.5 * bright})`)
-    wg.addColorStop(1, 'rgba(255, 130, 50, 0)')
+    wg.addColorStop(0, `rgba(255, 175, 110, ${0.45 * bright})`)
+    wg.addColorStop(1, 'rgba(255,120,50,0)')
     ctx.fillStyle = wg
     ctx.beginPath()
     ctx.arc(wx, wy, wr, 0, Math.PI * 2)
@@ -246,9 +211,8 @@ function drawOrganicBlob(
   }
 
   if (selected) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'
-    ctx.lineWidth = Math.max(1, r * 0.07)
-    blobPath(ctx, x, y, r * 1.06, seed, lobes)
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+    ctx.lineWidth = Math.max(0.8, r * 0.06)
     ctx.stroke()
   }
 
@@ -273,17 +237,11 @@ export function DnaHelix({
     y: number
     moved: boolean
   } | null>(null)
-  const pinchRef = useRef<{
-    dist: number
-    cx: number
-    cy: number
-  } | null>(null)
+  const pinchRef = useRef<{ dist: number; cx: number; cy: number } | null>(null)
   const animRef = useRef(0)
   const timeRef = useRef(0)
   const stateRef = useRef({ vertical, scale, offset, selectedId })
-  const geoCache = useRef<{ key: string; spheres: SphereNode[]; rungs: RungNode[] } | null>(
-    null,
-  )
+  const beadsCache = useRef<{ key: string; beads: Bead[] } | null>(null)
 
   useEffect(() => {
     stateRef.current = { vertical, scale, offset, selectedId }
@@ -307,153 +265,121 @@ export function DnaHelix({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
 
-      const geoKey = isVert ? 'v' : 'h'
-      if (!geoCache.current || geoCache.current.key !== geoKey) {
-        const g = buildGeometry(isVert)
-        geoCache.current = { key: geoKey, spheres: g.spheres, rungs: g.rungs }
+      const key = isVert ? 'v' : 'h'
+      if (!beadsCache.current || beadsCache.current.key !== key) {
+        beadsCache.current = { key, beads: buildBeads(isVert) }
       }
-      const { spheres, rungs } = geoCache.current
+      const beads = beadsCache.current.beads
 
       const cx = w / 2 + off.x
       const cy = h / 2 + off.y
       const t = timeRef.current
 
-      const project = (x: number, y: number, z: number, sizeMul = 1) => ({
-        px: cx + x * sc,
-        py: cy + y * sc,
-        depth: z,
-        size: (SPHERE_R * sizeMul + z * 2.4) * sc,
-      })
-
-      hitsRef.current = []
-
-      // Soft ambient bloom behind helix
-      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(w, h) * 0.5)
-      glow.addColorStop(0, 'rgba(120, 220, 255, 0.2)')
-      glow.addColorStop(0.35, 'rgba(40, 130, 180, 0.08)')
-      glow.addColorStop(1, 'rgba(0, 0, 0, 0)')
-      ctx.fillStyle = glow
+      // Central luminous bloom (like reference spark core)
+      const bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(w, h) * 0.42)
+      bloom.addColorStop(0, 'rgba(220, 245, 255, 0.28)')
+      bloom.addColorStop(0.25, 'rgba(100, 200, 240, 0.12)')
+      bloom.addColorStop(0.55, 'rgba(40, 120, 170, 0.04)')
+      bloom.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = bloom
       ctx.fillRect(0, 0, w, h)
 
-      // Ghost helix in background for depth (blurred distant strand)
+      // Distant ghost DNA strands (blurred depth)
       ctx.save()
-      ctx.globalAlpha = 0.22
-      ctx.filter = 'blur(8px)'
-      for (let g = 0; g < 40; g++) {
-        const along = (g / 40 - 0.5) * TOTAL * SPACING * 0.85
-        const phase = (g / 40) * Math.PI * 8
-        const lat = Math.cos(phase) * AMPLITUDE * 1.35
-        const gx = isVert ? cx + (lat + 70) * sc * 0.55 : cx + along * sc * 0.45 + 90
-        const gy = isVert ? cy + along * sc * 0.45 - 40 : cy + (lat - 40) * sc * 0.55
-        const gr = (5 + (g % 5)) * sc
-        const gg = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr)
-        gg.addColorStop(0, 'rgba(140, 210, 240, 0.7)')
-        gg.addColorStop(1, 'rgba(40, 100, 140, 0)')
-        ctx.fillStyle = gg
-        ctx.beginPath()
-        ctx.arc(gx, gy, gr, 0, Math.PI * 2)
-        ctx.fill()
+      ctx.globalAlpha = 0.18
+      ctx.filter = 'blur(10px)'
+      for (let g = 0; g < 2; g++) {
+        const ox = g === 0 ? w * 0.18 : -w * 0.12
+        const oy = g === 0 ? -h * 0.08 : h * 0.1
+        for (let i = 0; i < 50; i++) {
+          const along = (i / 50 - 0.5) * TOTAL * SPACING * 0.7
+          const phase = (i / 50) * Math.PI * 10
+          const lat = Math.cos(phase) * AMPLITUDE * 1.2
+          const gx = isVert ? cx + ox + lat * sc * 0.5 : cx + ox + along * sc * 0.4
+          const gy = isVert ? cy + oy + along * sc * 0.4 : cy + oy + lat * sc * 0.5
+          const gr = (4 + (i % 4)) * sc
+          const gg = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr)
+          gg.addColorStop(0, 'rgba(140, 210, 240, 0.9)')
+          gg.addColorStop(1, 'rgba(30, 80, 120, 0)')
+          ctx.fillStyle = gg
+          ctx.beginPath()
+          ctx.arc(gx, gy, gr, 0, Math.PI * 2)
+          ctx.fill()
+        }
       }
       ctx.restore()
 
-      const drawnSpheres = spheres
-        .map((s) => {
-          const pulse = Math.sin(t * 0.55 + s.phase) * 0.03
-          return { ...s, z: s.z + pulse }
-        })
+      const drawn = beads
+        .map((b) => ({
+          ...b,
+          z: b.z + Math.sin(t * 0.4 + b.seed * 0.01) * 0.025,
+        }))
         .sort((a, b) => a.z - b.z)
 
-      // Rungs as chains of deformed beads
-      for (const rung of rungs) {
-        const a = project(rung.x1, rung.y1, rung.z)
-        const b = project(rung.x2, rung.y2, rung.z)
-        const midX = (a.px + b.px) / 2
-        const midY = (a.py + b.py) / 2
-        const bright = 0.4 + (rung.z + 1) * 0.28
-        const fact = factForSegment(rung.index)
-        const hitId = `rung-${rung.index}`
-        const isSelected = sel === hitId
-        const soft = Math.min(1, Math.abs(rung.z) * 0.85)
+      hitsRef.current = []
+      const hitAccum = new Map<string, { sx: number; sy: number; n: number; fact: DnaFact; kind: 'sphere' | 'rung'; index: number }>()
 
-        const steps = 6
-        for (let s = 0; s <= steps; s++) {
-          const u = s / steps
-          // Slight curve / wobble along the rung
-          const wob =
-            Math.sin(u * Math.PI) * (hash01(rung.seed + s) - 0.5) * 6 * sc
-          const rx = a.px + (b.px - a.px) * u + (isVert ? 0 : wob)
-          const ry = a.py + (b.py - a.py) * u + (isVert ? wob : 0)
-          const rr = Math.max(2.2, (3.6 + hash01(rung.seed + s * 3) * 2.2) * sc)
-          drawOrganicBlob(ctx, rx, ry, rr, rung.seed + s * 17, {
-            bright,
-            accent: isSelected ? fact.accent : '#6ec8e8',
-            selected: isSelected && s === Math.floor(steps / 2),
-            soft,
+      for (const b of drawn) {
+        const px = cx + b.x * sc
+        const py = cy + b.y * sc
+        const size = Math.max(1.2, b.r * sc * (0.85 + b.z * 0.2))
+        const bright = 0.4 + (b.z + 1) * 0.32
+        const soft = Math.min(1, Math.pow(Math.abs(b.z), 1.25) * 0.95)
+        const hitId = b.strand === 2 ? `rung-${b.index}` : `sphere-${b.strand}-${b.index}`
+        const selected = sel === hitId
+
+        drawLumpyBead(ctx, px, py, size, b.seed, bright, soft, selected)
+
+        const fact = factForSegment(b.index + (b.strand === 2 ? 0 : b.strand))
+        const prev = hitAccum.get(hitId)
+        if (prev) {
+          prev.sx += px
+          prev.sy += py
+          prev.n += 1
+        } else {
+          hitAccum.set(hitId, {
+            sx: px,
+            sy: py,
+            n: 1,
+            fact,
+            kind: b.strand === 2 ? 'rung' : 'sphere',
+            index: b.index,
           })
         }
+      }
 
+      for (const [id, h] of hitAccum) {
         hitsRef.current.push({
-          id: hitId,
-          segmentIndex: rung.index,
-          kind: 'rung',
-          cx: midX,
-          cy: midY,
-          r: Math.max(16, 20 * sc),
-          fact,
+          id,
+          segmentIndex: h.index,
+          kind: h.kind,
+          cx: h.sx / h.n,
+          cy: h.sy / h.n,
+          r: Math.max(16, 22 * sc),
+          fact: h.fact,
         })
       }
 
-      for (const s of drawnSpheres) {
-        const { px, py, depth, size } = project(s.x, s.y, s.z, s.sizeMul)
-        const fact = factForSegment(s.index + s.strand)
-        const hitId = `sphere-${s.strand}-${s.index}`
-        const isSelected = sel === hitId
-        const bright = 0.42 + (depth + 1) * 0.3
-        // Soft focus away from focal plane (z≈0)
-        const soft = Math.min(1, Math.pow(Math.abs(depth), 1.35))
-
-        // Cyan-forward palette; accent only on selection / warm flecks inside blob
-        const accent = isSelected ? fact.accent : '#7ad4f0'
-
-        drawOrganicBlob(ctx, px, py, Math.max(2.2, size), s.seed, {
-          bright,
-          accent,
-          selected: isSelected,
-          soft,
-        })
-
-        hitsRef.current.push({
-          id: hitId,
-          segmentIndex: s.index,
-          kind: 'sphere',
-          cx: px,
-          cy: py,
-          r: Math.max(11, size * 1.4),
-          fact,
-        })
-      }
-
-      // Sharp sparkles near focus (like the reference)
-      for (let i = 0; i < 28; i++) {
-        const ang = t * 0.12 + i * 0.55
-        const rad = 30 + (i % 7) * 16
-        const sx = cx + Math.cos(ang) * rad * sc * 0.45
-        const sy = cy + Math.sin(ang * 1.25) * rad * sc * 0.28
-        const sr = 0.5 + (i % 4) * 0.55
-        const spark = 0.2 + (Math.sin(t * 1.4 + i) + 1) * 0.25
+      // Sharp white sparks near focus
+      for (let i = 0; i < 36; i++) {
+        const ang = t * 0.1 + i * 0.48
+        const rad = 20 + (i % 8) * 14
+        const sx = cx + Math.cos(ang) * rad * sc * 0.5
+        const sy = cy + Math.sin(ang * 1.35) * rad * sc * 0.32
+        const spark = 0.15 + (Math.sin(t * 1.6 + i) + 1) * 0.28
+        const sr = 0.4 + (i % 3) * 0.45
         ctx.fillStyle = `rgba(255,255,255,${spark})`
         ctx.beginPath()
         ctx.arc(sx, sy, sr, 0, Math.PI * 2)
         ctx.fill()
-        // Cross sparkle for a few
-        if (i % 5 === 0) {
-          ctx.strokeStyle = `rgba(255,255,255,${spark * 0.7})`
-          ctx.lineWidth = 0.7
+        if (i % 6 === 0) {
+          ctx.strokeStyle = `rgba(255,255,255,${spark * 0.65})`
+          ctx.lineWidth = 0.6
           ctx.beginPath()
-          ctx.moveTo(sx - sr * 3, sy)
-          ctx.lineTo(sx + sr * 3, sy)
-          ctx.moveTo(sx, sy - sr * 3)
-          ctx.lineTo(sx, sy + sr * 3)
+          ctx.moveTo(sx - sr * 3.5, sy)
+          ctx.lineTo(sx + sr * 3.5, sy)
+          ctx.moveTo(sx, sy - sr * 3.5)
+          ctx.lineTo(sx, sy + sr * 3.5)
           ctx.stroke()
         }
       }
@@ -474,9 +400,7 @@ export function DnaHelix({
       let best: HitTarget | null = null
       let bestDist = Infinity
       for (const hit of hitsRef.current) {
-        const dx = x - hit.cx
-        const dy = y - hit.cy
-        const d = Math.hypot(dx, dy)
+        const d = Math.hypot(x - hit.cx, y - hit.cy)
         if (d <= hit.r && d < bestDist) {
           best = hit
           bestDist = d
@@ -494,13 +418,7 @@ export function DnaHelix({
       if (e.pointerType === 'touch' && e.isPrimary === false) return
       canvas.setPointerCapture(e.pointerId)
       const pos = getPos(e)
-      pointerRef.current = {
-        active: true,
-        id: e.pointerId,
-        x: pos.x,
-        y: pos.y,
-        moved: false,
-      }
+      pointerRef.current = { active: true, id: e.pointerId, x: pos.x, y: pos.y, moved: false }
     }
 
     const onPointerMove = (e: PointerEvent) => {
@@ -568,10 +486,7 @@ export function DnaHelix({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const rect = canvas.getBoundingClientRect()
-      const cx = e.clientX - rect.left
-      const cy = e.clientY - rect.top
-      const factor = e.deltaY > 0 ? 0.92 : 1.08
-      onPinchZoom(factor, cx, cy)
+      onPinchZoom(e.deltaY > 0 ? 0.92 : 1.08, e.clientX - rect.left, e.clientY - rect.top)
     }
 
     canvas.addEventListener('pointerdown', onPointerDown)
@@ -600,11 +515,7 @@ export function DnaHelix({
       ref={canvasRef}
       className="dna-canvas"
       role="img"
-      aria-label={
-        vertical
-          ? 'Dupla hélice de ADN na vertical. Arrasta, amplia e toca nas partes.'
-          : 'Dupla hélice de ADN na horizontal. Arrasta, amplia e clica nas partes.'
-      }
+      aria-label="Dupla hélice de ADN interativa"
     />
   )
 }

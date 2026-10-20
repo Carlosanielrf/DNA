@@ -67,19 +67,19 @@ export function FluidBackground() {
           alpha: 0.08 + Math.random() * 0.1,
         })
       }
-      const particleCount = Math.max(28, Math.floor((w * h) / 28000))
+      const particleCount = Math.max(40, Math.floor((w * h) / 22000))
       for (let i = 0; i < particleCount; i++) {
-        const warm = Math.random() > 0.72
+        const warm = Math.random() > 0.62
         particles.push({
           x: Math.random() * w,
           y: Math.random() * h,
-          r: warm ? 4 + Math.random() * 14 : 1 + Math.random() * 3.5,
-          vx: (Math.random() - 0.5) * 0.08,
-          vy: (Math.random() - 0.5) * 0.06 - 0.02,
+          r: warm ? 6 + Math.random() * 22 : 1 + Math.random() * 3.2,
+          vx: (Math.random() - 0.5) * 0.06,
+          vy: (Math.random() - 0.5) * 0.05 - 0.015,
           color: warm
-            ? `hsla(${18 + Math.random() * 28}, 90%, ${55 + Math.random() * 20}%, 1)`
-            : `hsla(${190 + Math.random() * 30}, 90%, ${65 + Math.random() * 25}%, 1)`,
-          alpha: warm ? 0.18 + Math.random() * 0.25 : 0.35 + Math.random() * 0.45,
+            ? `hsla(${12 + Math.random() * 32}, 88%, ${52 + Math.random() * 22}%, 1)`
+            : `hsla(${188 + Math.random() * 28}, 85%, ${60 + Math.random() * 28}%, 1)`,
+          alpha: warm ? 0.12 + Math.random() * 0.22 : 0.3 + Math.random() * 0.4,
         })
       }
     }
@@ -91,11 +91,12 @@ export function FluidBackground() {
     }
 
     const draw = () => {
-      // Deep navy → teal fluid base
-      const g = ctx.createLinearGradient(0, 0, w * 0.4, h)
-      g.addColorStop(0, '#03101f')
-      g.addColorStop(0.45, '#06253d')
-      g.addColorStop(1, '#0a3a4d')
+      // Deep navy → teal fluid base (reference atmosphere)
+      const g = ctx.createLinearGradient(0, 0, w * 0.35, h)
+      g.addColorStop(0, '#020b16')
+      g.addColorStop(0.4, '#041e32')
+      g.addColorStop(0.75, '#063248')
+      g.addColorStop(1, '#0a4252')
       ctx.fillStyle = g
       ctx.fillRect(0, 0, w, h)
 

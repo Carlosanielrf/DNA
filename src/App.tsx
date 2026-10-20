@@ -3,7 +3,7 @@ import { FluidBackground } from './components/FluidBackground'
 import { DnaHelix } from './components/DnaHelix'
 import { FactPanel } from './components/FactPanel'
 import { useMediaQuery } from './hooks/useMediaQuery'
-import { INTRO_FACT, type DnaFact } from './data/facts'
+import type { DnaFact } from './data/facts'
 import './App.css'
 
 const MIN_SCALE = 0.45
@@ -18,14 +18,12 @@ export default function App() {
   const vertical = isMobile
 
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
-  const [fact, setFact] = useState<DnaFact>(INTRO_FACT)
+  const [fact, setFact] = useState<DnaFact | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [panelOpen, setPanelOpen] = useState(true)
 
   const onSelect = useCallback((next: DnaFact, hitId: string) => {
     setFact(next)
     setSelectedId(hitId)
-    setPanelOpen(true)
   }, [])
 
   const onPan = useCallback((dx: number, dy: number) => {
@@ -52,29 +50,9 @@ export default function App() {
     onPinchZoom(factor, cx, cy)
   }
 
-  const resetView = () => {
-    setView({ scale: 1, x: 0, y: 0 })
-    setFact(INTRO_FACT)
-    setSelectedId(null)
-    setPanelOpen(true)
-  }
-
   return (
     <div className="app">
       <FluidBackground />
-
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand__mark" aria-hidden="true" />
-          <div>
-            <p className="brand__name">DNA Explorer</p>
-            <p className="brand__tag">Hélice humana interativa</p>
-          </div>
-        </div>
-        <p className="orientation-hint">
-          {vertical ? 'Vista vertical · mobile' : 'Vista horizontal · desktop'}
-        </p>
-      </header>
 
       <main className="stage">
         <DnaHelix
@@ -88,39 +66,20 @@ export default function App() {
         />
       </main>
 
-      <div className="controls" role="toolbar" aria-label="Controlos de zoom">
-        <button type="button" onClick={() => zoomBy(1.15)} aria-label="Aumentar">
+      <div className="controls" role="toolbar" aria-label="Zoom">
+        <button type="button" onClick={() => zoomBy(1.15)} aria-label="Zoom in">
           +
         </button>
-        <button type="button" onClick={() => zoomBy(1 / 1.15)} aria-label="Diminuir">
+        <button type="button" onClick={() => zoomBy(1 / 1.15)} aria-label="Zoom out">
           −
         </button>
-        <button type="button" className="controls__reset" onClick={resetView}>
-          Repor
-        </button>
       </div>
 
-      <div className={`fact-dock ${panelOpen ? 'is-open' : ''}`}>
-        {panelOpen ? (
-          <FactPanel
-            fact={fact}
-            showClose={isMobile}
-            onClose={() => setPanelOpen(false)}
-          />
-        ) : (
-          <button
-            type="button"
-            className="fact-dock__reopen"
-            onClick={() => setPanelOpen(true)}
-          >
-            Ver facto
-          </button>
-        )}
-      </div>
-
-      <p className="hint">
-        Arrasta · pinça ou scroll para zoom · toca nas esferas e degraus
-      </p>
+      {fact ? (
+        <div className="fact-dock">
+          <FactPanel fact={fact} onClose={() => { setFact(null); setSelectedId(null) }} />
+        </div>
+      ) : null}
     </div>
   )
 }

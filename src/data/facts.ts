@@ -84,15 +84,6 @@ export const FACTS: DnaFact[] = [
   },
 ]
 
-export const INTRO_FACT: DnaFact = {
-  id: 'intro',
-  kind: 'helix',
-  title: 'ADN humano',
-  subtitle: 'Explora a molécula da vida',
-  body: 'Arrasta para navegar, usa os controlos ou o gesto de pinça para ampliar, e toca nas esferas ou nos degraus para descobrir factos sobre cada parte.',
-  accent: '#8ef0ff',
-}
-
 const KIND_CYCLE: DnaPartKind[] = [
   'adenine',
   'thymine',
